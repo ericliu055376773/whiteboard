@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Home, Briefcase, ClipboardList, Map, 
   Folder, Pin, PlusSquare, CreditCard, Box, 
@@ -9,16 +9,13 @@ import {
   LayoutTemplate, Calendar, BarChart2, Bell
 } from 'lucide-react';
 
-/* =========================================================
-   🔥 Firebase 雲端資料庫設定與初始化
-========================================================= */
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+// ===== 引入 Firebase SDK =====
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
 
-// 結合您的專屬設定與系統內建設定，確保本地與預覽環境皆可正常運行，避免無 apiKey 導致畫面崩潰
-const fallbackConfig = {
-  apiKey: "AIzaSyDLtYRom_8CdTWKk3HQhqQz3_yzHTOc37E",
+// 您的 Firebase 設定檔
+const firebaseConfig = {
+  apiKey: "AIzaSyDLTYRom_8CdTWKk3HqhqQz3_yzHTOc37E",
   authDomain: "wthiteboard.firebaseapp.com",
   projectId: "wthiteboard",
   storageBucket: "wthiteboard.firebasestorage.app",
@@ -26,19 +23,48 @@ const fallbackConfig = {
   appId: "1:699339559143:web:118305be188efa745a1242"
 };
 
-let firebaseConfig = fallbackConfig;
-try {
-  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-    firebaseConfig = JSON.parse(__firebase_config);
-  }
-} catch (e) {
-  console.warn("使用預設 Firebase 設定", e);
+// 初始化 Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* =========================================================
+   自訂 Hook：自動同步 React State 與 Firebase Firestore
+========================================================= */
+function useFirestoreState(collectionName, docId, defaultValue) {
+  const [state, setState] = useState(defaultValue);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const docRef = doc(db, collectionName, docId);
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        setState(snap.data().value);
+      } else {
+        // 如果雲端沒有這筆資料，就建立並寫入預設值
+        setDoc(docRef, { value: defaultValue }).catch(console.error);
+        setState(defaultValue);
+      }
+      setIsLoaded(true);
+    }, (error) => {
+      console.error(`讀取 Firestore 失敗 (${docId}):`, error);
+      setIsLoaded(true); // 發生錯誤時仍解除讀取畫面，使用本地狀態
+    });
+
+    return () => unsubscribe();
+  }, [collectionName, docId]);
+
+  // 覆寫 setState，讓它同時更新本地畫面與雲端資料庫
+  const setFirestoreState = (newValue) => {
+    setState(prevState => {
+      const resolvedValue = typeof newValue === 'function' ? newValue(prevState) : newValue;
+      setDoc(doc(db, collectionName, docId), { value: resolvedValue }).catch(console.error);
+      return resolvedValue;
+    });
+  };
+
+  return [state, setFirestoreState, isLoaded];
 }
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'work-os-default';
 
 // 客製化：完美還原設計圖的「四角星星」Logo
 const StarLogo = ({ className }) => (
@@ -60,7 +86,7 @@ export default function App() {
   const [passwordError, setPasswordError] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false); 
 
-  // ===== 全域設定面板的 State =====
+  // ===== 全域設定面板的 UI State =====
   const [settingTab, setSettingTab] = useState('staff');
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffRole, setNewStaffRole] = useState('正職');
@@ -87,196 +113,82 @@ export default function App() {
   };
 
   /* =========================================================
-     應用程式資料狀態 (結合 LocalStorage 預設值)
+     Firebase 雲端儲存系統 (取代原本的 LocalStorage)
   ========================================================= */
   
-  const [mainMenuOrder, setMainMenuOrder] = useState(() => {
-    try { const saved = localStorage.getItem('mainMenuOrder'); if (saved) return JSON.parse(saved); } catch(e){}
-    return ['home', 'workflow', 'integrations', 'records', 'station'];
-  });
-  useEffect(() => { localStorage.setItem('mainMenuOrder', JSON.stringify(mainMenuOrder)); }, [mainMenuOrder]);
+  // 1. 主選單排序狀態
+  const [mainMenuOrder, setMainMenuOrder, isL1] = useFirestoreState('workOS_v1', 'mainMenuOrder', ['home', 'workflow', 'integrations', 'records', 'station']);
+  
+  // 2. 工作流程分類
+  const [workflowCategories, setWorkflowCategories, isL2] = useFirestoreState('workOS_v1', 'workflowCategories', [
+    { id: 'workflow', name: '標準作業程序 (SOP)' },
+    { id: 'workflow-project', name: '專案排程追蹤' }
+  ]);
 
-  const [workflowCategories, setWorkflowCategories] = useState(() => {
-    try { const saved = localStorage.getItem('workflowCategories'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return [ { id: 'workflow', name: '標準作業程序 (SOP)' }, { id: 'workflow-project', name: '專案排程追蹤' } ];
+  // 3. 介面文字設定
+  const [menuLabels, setMenuLabels, isL3] = useFirestoreState('workOS_v1', 'menuLabels', {
+    home: '首頁', workflow: '工作流程', integrations: '物料消耗', records: '工作紀錄', station: '崗位區域安排'
   });
-  useEffect(() => { localStorage.setItem('workflowCategories', JSON.stringify(workflowCategories)); }, [workflowCategories]);
 
+  // 4. 崗位區域分類
+  const [stationCategories, setStationCategories, isL4] = useFirestoreState('workOS_v1', 'stationCategories', [
+    { id: 'station-a', name: 'A區 內部崗位' }, { id: 'station-b', name: 'B區 外部崗位' }, { id: 'station-c', name: '機動支援組' }
+  ]);
+
+  // 5. 崗位卡片
+  const [stations, setStations, isL5] = useFirestoreState('workOS_v1', 'stations', [
+    { id: 'st1', categoryId: 'station-a', name: '主入口迎賓櫃台' },
+    { id: 'st2', categoryId: 'station-a', name: '車道訪客管制區' },
+    { id: 'st3', categoryId: 'station-b', name: '戶外巡檢站' }
+  ]);
+
+  // 6. 崗位指派名單
+  const [stationAssignments, setStationAssignments, isL6] = useFirestoreState('workOS_v1', 'stationAssignments', { 'st1': ['s1', 's2'] });
+
+  // 7. 所有任務節點
+  const [allTasks, setAllTasks, isL7] = useFirestoreState('workOS_v1', 'allTasks', {
+    'workflow': [
+      { id: 1, time: '08:00', title: '早班交接與設備點交', content: '確認大廳櫃台所有系統與設備運作正常，閱讀昨日工作日誌，並與夜班人員完成口頭與書面交接手續。確保零用金與重要鑰匙清點無誤。' },
+      { id: 2, time: '10:30', title: '主入口區域巡檢', content: '檢查A區、B區訪客動線是否順暢，維持環境整潔，並排除任何可能的安全隱患。主動協助訪客辦理換證與引導作業。' }
+    ],
+    'workflow-project': [
+      { id: 4, time: '09:00', title: '專案A進度會議', content: '確認各部門進度與潛在阻礙，準備週報。' }
+    ]
+  });
+
+  // 8. 物料消耗紀錄
+  const [consumptionRecords, setConsumptionRecords, isL8] = useFirestoreState('workOS_v1', 'consumptionRecords', []);
+
+  // 9. 工作紀錄標籤 (送餐、收桌...)
+  const [recordTabs, setRecordTabs, isL9] = useFirestoreState('workOS_v1', 'recordTabs', [
+    { id: 't1', name: '送餐' }, { id: 't2', name: '收桌' }, { id: 't3', name: '買單' }
+  ]);
+
+  // 10. 工作人員名單
+  const [staffMembers, setStaffMembers, isL10] = useFirestoreState('workOS_v1', 'staffMembers', [
+    { id: 's1', name: '王大明', role: '店長' }, { id: 's2', name: '林小美', role: '正職' }, { id: 's3', name: '陳建國', role: '兼職' }
+  ]);
+
+  // 11. 每個分類下的工作計數
+  const [recordCounts, setRecordCounts, isL11] = useFirestoreState('workOS_v1', 'recordCounts', {
+    't1': { 's1': 0, 's2': 0, 's3': 0 }, 't2': { 's1': 0, 's2': 0, 's3': 0 }, 't3': { 's1': 0, 's2': 0, 's3': 0 }
+  });
+
+  // 12. 首頁公告資料
+  const [announcements, setAnnouncements, isL12] = useFirestoreState('workOS_v1', 'announcements', [
+    { id: 'a1', date: new Date().toISOString().split('T')[0], title: '雲端系統正式上線 🚀', content: 'Work OS 系統已正式連線至 Firebase 雲端資料庫！現在您所有的修改與設定都會即時儲存並同步給團隊成員。' },
+    { id: 'a2', date: '2024-05-18', title: '端午節排班注意事項', content: '端午連假排班已開放填寫，請於本週五前完成畫假。' }
+  ]);
+
+  // 新增分類 UI 狀態變數
   const [isAddingWorkflowCat, setIsAddingWorkflowCat] = useState(false);
   const [newWorkflowCatName, setNewWorkflowCatName] = useState('');
   const [isAddingStationCat, setIsAddingStationCat] = useState(false);
   const [newStationCatName, setNewStationCatName] = useState('');
-
-  const [menuLabels, setMenuLabels] = useState(() => {
-    try { const saved = localStorage.getItem('menuLabels'); if (saved) return JSON.parse(saved); } catch(e){}
-    return { home: '首頁', workflow: '工作流程', integrations: '物料消耗', records: '工作紀錄', station: '崗位區域安排' };
-  });
-  useEffect(() => { localStorage.setItem('menuLabels', JSON.stringify(menuLabels)); }, [menuLabels]);
-
-  const [stationCategories, setStationCategories] = useState(() => {
-    try { const saved = localStorage.getItem('stationCategories'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return [ { id: 'station-a', name: 'A區 內部崗位' }, { id: 'station-b', name: 'B區 外部崗位' }, { id: 'station-c', name: '機動支援組' } ];
-  });
-  useEffect(() => { localStorage.setItem('stationCategories', JSON.stringify(stationCategories)); }, [stationCategories]);
-
-  const [stations, setStations] = useState(() => {
-    try { const saved = localStorage.getItem('stations'); if (saved) return JSON.parse(saved); } catch(e){}
-    return [ { id: 'st1', categoryId: 'station-a', name: '主入口迎賓櫃台' }, { id: 'st2', categoryId: 'station-a', name: '車道訪客管制區' }, { id: 'st3', categoryId: 'station-b', name: '戶外巡檢站' } ];
-  });
-  useEffect(() => { localStorage.setItem('stations', JSON.stringify(stations)); }, [stations]);
-
-  const [stationAssignments, setStationAssignments] = useState(() => {
-    try { const saved = localStorage.getItem('stationAssignments'); if (saved) return JSON.parse(saved); } catch(e){}
-    return { 'st1': ['s1', 's2'] };
-  });
-  useEffect(() => { localStorage.setItem('stationAssignments', JSON.stringify(stationAssignments)); }, [stationAssignments]);
-
-  const [allTasks, setAllTasks] = useState(() => {
-    try { const saved = localStorage.getItem('allTasks'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return {
-      'workflow': [
-        { id: 1, time: '08:00', title: '早班交接與設備點交', content: '確認大廳櫃台所有系統與設備運作正常，閱讀昨日工作日誌，並與夜班人員完成口頭與書面交接手續。確保零用金與重要鑰匙清點無誤。' },
-        { id: 2, time: '10:30', title: '主入口區域巡檢', content: '檢查A區、B區訪客動線是否順暢，維持環境整潔，並排除任何可能的安全隱患。主動協助訪客辦理換證與引導作業。' }
-      ],
-      'workflow-project': [
-        { id: 4, time: '09:00', title: '專案A進度會議', content: '確認各部門進度與潛在阻礙，準備週報。' }
-      ]
-    };
-  });
-  useEffect(() => { localStorage.setItem('allTasks', JSON.stringify(allTasks)); }, [allTasks]);
-
-  const [consumptionRecords, setConsumptionRecords] = useState(() => {
-    try { const saved = localStorage.getItem('consumptionRecords'); if (saved) return JSON.parse(saved); } catch(e){}
-    return [];
-  });
-  useEffect(() => { localStorage.setItem('consumptionRecords', JSON.stringify(consumptionRecords)); }, [consumptionRecords]);
-
-  const [recordTabs, setRecordTabs] = useState(() => {
-    try { const saved = localStorage.getItem('recordTabs'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return [ { id: 't1', name: '送餐' }, { id: 't2', name: '收桌' }, { id: 't3', name: '買單' } ];
-  });
-  useEffect(() => { localStorage.setItem('recordTabs', JSON.stringify(recordTabs)); }, [recordTabs]);
-
   const [activeTabId, setActiveTabId] = useState(recordTabs[0]?.id || 't1');
 
-  const [staffMembers, setStaffMembers] = useState(() => {
-    try { const saved = localStorage.getItem('staffMembers'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return [ { id: 's1', name: '王大明', role: '店長' }, { id: 's2', name: '林小美', role: '正職' }, { id: 's3', name: '陳建國', role: '兼職' } ];
-  });
-  useEffect(() => { localStorage.setItem('staffMembers', JSON.stringify(staffMembers)); }, [staffMembers]);
-
-  const [recordCounts, setRecordCounts] = useState(() => {
-    try { const saved = localStorage.getItem('recordCounts'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return { 't1': { 's1': 0, 's2': 0, 's3': 0 }, 't2': { 's1': 0, 's2': 0, 's3': 0 }, 't3': { 's1': 0, 's2': 0, 's3': 0 } };
-  });
-  useEffect(() => { localStorage.setItem('recordCounts', JSON.stringify(recordCounts)); }, [recordCounts]);
-
-  const [announcements, setAnnouncements] = useState(() => {
-    try { const saved = localStorage.getItem('announcements'); if (saved) return JSON.parse(saved); } catch (e) { }
-    return [
-      { id: 'a1', date: new Date().toISOString().split('T')[0], title: '系統更新公告', content: 'Work OS 系統已更新至最新版本，並且已經成功連接至 Firebase 雲端資料庫！現在所有的變更都會自動儲存到雲端，實現跨裝置無縫同步功能。' },
-      { id: 'a2', date: '2024-05-18', title: '端午節排班注意事項', content: '端午連假排班已開放填寫，請於本週五前完成畫假。' }
-    ];
-  });
-  useEffect(() => { localStorage.setItem('announcements', JSON.stringify(announcements)); }, [announcements]);
-
-  /* =========================================================
-     🔥 Firebase 全自動雙向同步系統
-  ========================================================= */
-  const [user, setUser] = useState(null);
-  const [isDbLoaded, setIsDbLoaded] = useState(false);
-  const lastSyncStr = useRef(null);
-
-  // 1. 初始化登入 (確保有權限讀寫資料庫，並符合安全規範)
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.error("Firebase Login Failed:", err);
-      }
-    };
-    initAuth();
-    
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. 監聽 Firebase 資料變化 (拉取遠端資料)
-  useEffect(() => {
-    if (!user) return;
-    
-    // 使用符合安全規範的路徑 (Rule 1)
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'work_os_data', 'global_state'); 
-    
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        const incomingStr = JSON.stringify(data);
-        
-        // 判斷：如果遠端抓下來的字串與最後一次本地更新的字串相同，就忽略不處理，避免無限迴圈
-        if (lastSyncStr.current !== incomingStr) {
-           lastSyncStr.current = incomingStr; // 更新快取
-           
-           if (data.mainMenuOrder) setMainMenuOrder(data.mainMenuOrder);
-           if (data.workflowCategories) setWorkflowCategories(data.workflowCategories);
-           if (data.menuLabels) setMenuLabels(data.menuLabels);
-           if (data.stationCategories) setStationCategories(data.stationCategories);
-           if (data.stations) setStations(data.stations);
-           if (data.stationAssignments) setStationAssignments(data.stationAssignments);
-           if (data.allTasks) setAllTasks(data.allTasks);
-           if (data.consumptionRecords) setConsumptionRecords(data.consumptionRecords);
-           if (data.recordTabs) setRecordTabs(data.recordTabs);
-           if (data.staffMembers) setStaffMembers(data.staffMembers);
-           if (data.recordCounts) setRecordCounts(data.recordCounts);
-           if (data.announcements) setAnnouncements(data.announcements);
-        }
-      }
-      // 標記資料庫初始化載入完成
-      setIsDbLoaded(true);
-    }, (error) => {
-      console.error("Firebase Sync Error:", error);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  // 3. 本地資料變更時，防抖動(Debounce)自動儲存至 Firebase
-  useEffect(() => {
-    if (!user || !isDbLoaded) return;
-    
-    // 收集當前所有需要同步的狀態
-    const currentData = {
-      mainMenuOrder, workflowCategories, menuLabels, stationCategories, stations,
-      stationAssignments, allTasks, consumptionRecords, recordTabs, staffMembers,
-      recordCounts, announcements
-    };
-    
-    const currentStr = JSON.stringify(currentData);
-
-    // 只有在資料真的有改變時，才啟動倒數計時器進行存檔
-    if (currentStr !== lastSyncStr.current) {
-      const timer = setTimeout(() => {
-        lastSyncStr.current = currentStr; // 寫入前先更新快取，防止被觸發的 onSnapshot 覆蓋回來
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'work_os_data', 'global_state');
-        setDoc(docRef, currentData, { merge: true })
-          .catch(err => console.error("Firebase Save Error:", err));
-      }, 1500); // 延遲 1.5 秒存檔，避免打字到一半一直頻繁寫入資料庫
-      
-      return () => clearTimeout(timer);
-    }
-  }, [
-    user, isDbLoaded, mainMenuOrder, workflowCategories, menuLabels, stationCategories, 
-    stations, stationAssignments, allTasks, consumptionRecords, recordTabs, 
-    staffMembers, recordCounts, announcements
-  ]);
-
+  // 確認所有雲端資料是否載入完畢
+  const isAppReady = isL1 && isL2 && isL3 && isL4 && isL5 && isL6 && isL7 && isL8 && isL9 && isL10 && isL11 && isL12;
 
   /* =========================================================
      拖曳排序 (Drag & Drop) 系統
@@ -382,6 +294,7 @@ export default function App() {
     if (window.innerWidth < 1024) setIsMobileDrawerOpen(false);
   };
 
+  // 左側主導覽列點擊邏輯 (自動選取第一個子分類)
   const handleLeftNavClick = (menuId) => {
     if (menuId === 'workflow') {
        setActiveMenu(workflowCategories[0]?.id || 'workflow');
@@ -397,6 +310,7 @@ export default function App() {
     return `w-[48px] h-[48px] flex items-center justify-center rounded-2xl transition-all ${isActive ? 'bg-white shadow-md text-black' : 'text-gray-500 hover:text-black hover:bg-white/60'}`;
   };
 
+  // 判斷當前的大分類與是否需要顯示側邊欄 (右側展開選單)
   const currentMainCategory = 
     activeMenu.startsWith('workflow') ? 'workflow' : 
     activeMenu.startsWith('station') ? 'station' : 
@@ -619,7 +533,6 @@ export default function App() {
         return (
           <RecordsContent 
             isEditMode={isEditMode}
-            setIsEditMode={setIsEditMode}
             recordTabs={recordTabs} setRecordTabs={setRecordTabs}
             activeTabId={activeTabId} setActiveTabId={setActiveTabId}
             staffMembers={staffMembers}
@@ -635,6 +548,16 @@ export default function App() {
         );
     }
   };
+
+  // 在 Firebase 資料完整載入前顯示讀取畫面
+  if (!isAppReady) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#dce0e4] gap-4 transition-opacity">
+        <StarLogo className="w-12 h-12 text-gray-500 animate-pulse" />
+        <p className="text-gray-500 font-bold tracking-widest text-sm animate-pulse">正在連線至雲端資料庫...</p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -699,10 +622,10 @@ export default function App() {
         <nav className="hidden lg:flex w-[72px] bg-[#f2f2f6] rounded-full flex-col items-center pt-8 pb-6 shadow-sm flex-shrink-0 relative justify-between">
           <div className="flex flex-col gap-2 w-full items-center relative z-10 px-2 mt-4">
             {mainMenuOrder.map((menuId, index) => {
-              const { isActive, Icon, hasNotification } = getMenuProps(menuId);
+              const { isActive, Icon, hasNotification, label } = getMenuProps(menuId);
               return (
                 <DraggableWrapper key={menuId} type="mainMenu" index={index} list={mainMenuOrder} setList={setMainMenuOrder} className="w-full flex justify-center relative">
-                  <button onClick={() => handleLeftNavClick(menuId)} className={getLeftNavBtnClass(isActive)}>
+                  <button onClick={() => handleLeftNavClick(menuId)} className={getLeftNavBtnClass(isActive)} title={label}>
                     <div className="relative">
                       <Icon className="w-[22px] h-[22px]" strokeWidth={1.5} />
                       {hasNotification && <span className="absolute -top-1 -right-1 w-2 h-2 bg-pink-400 rounded-full border-2 border-[#f2f2f6]"></span>}
@@ -714,7 +637,7 @@ export default function App() {
           </div>
           <div className="flex-1 w-[1.5px] bg-gray-200 my-4 z-0"></div>
           
-          <div className="relative cursor-pointer z-10 shrink-0 mb-2 bg-white/50 hover:bg-white p-3 rounded-2xl transition-all shadow-sm" onClick={handleLogoClick}>
+          <div className="relative cursor-pointer z-10 shrink-0 mb-2 bg-white/50 hover:bg-white p-3 rounded-2xl transition-all shadow-sm" onClick={handleLogoClick} title={isEditMode ? "全域設定" : "解鎖編輯"}>
             <StarLogo className={`w-7 h-7 transition-all duration-300 ${isEditMode ? 'text-blue-600 drop-shadow-md scale-110' : 'text-black hover:scale-110'}`} />
             {isEditMode && <div className="absolute -top-2 -right-2 bg-blue-100 text-blue-600 rounded-full p-1 shadow-sm animate-fade-in"><Settings2 className="w-3.5 h-3.5" /></div>}
           </div>
@@ -806,6 +729,7 @@ export default function App() {
 
 // --- Sub-components ---
 
+// 情境側邊欄內的專屬單行選單組件
 const ContextualMenuItem = ({ item, isActive, onClick, onSave, onDelete, isEditMode }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(item.name);
@@ -852,7 +776,7 @@ const ContextualMenuItem = ({ item, isActive, onClick, onSave, onDelete, isEditM
 };
 
 /* ===================================================================================
-   Consumption Content (物料消耗紀錄系統)
+   🆕 Consumption Content (物料消耗紀錄系統)
 =================================================================================== */
 
 const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionRecords, staffMembers, menuLabel }) => {
@@ -892,6 +816,7 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
     setDeletingId(null);
   };
 
+  // 計算數據: 本日、本週、本月、本年
   const getWeekYear = (d) => {
       const date = new Date(d);
       date.setDate(date.getDate() + 4 - (date.getDay()||7));
@@ -928,6 +853,7 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
     <div className="animate-fade-in flex flex-col h-full w-full max-w-6xl mx-auto">
       <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-6 shrink-0">{menuLabel}</h2>
 
+      {/* 風琴夾 / Tabs 分頁 */}
       <div className="flex items-center gap-2 mb-6 border-b border-gray-200 overflow-x-auto no-scrollbar shrink-0 pt-2 px-2">
         {tabs.map(tab => (
           <div 
@@ -939,6 +865,7 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
         ))}
       </div>
 
+      {/* 四大數據卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 shrink-0">
         {[
           { label: '本日消耗', value: dayTotal, icon: <Calendar className="w-5 h-5 text-gray-400" /> },
@@ -959,6 +886,7 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
         ))}
       </div>
 
+      {/* 新增消耗紀錄表單 */}
       <div className="bg-white rounded-[1.5rem] p-5 shadow-sm border border-gray-100 mb-6 shrink-0">
         <h3 className="text-sm font-bold text-gray-500 mb-4 flex items-center gap-2">
           <PlusSquare className="w-4 h-4" /> 新增消耗紀錄
@@ -1000,6 +928,7 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
         </div>
       </div>
 
+      {/* 歷史紀錄表 */}
       <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-x-auto w-full flex-1">
         <table className="w-full text-left border-collapse min-w-[700px]">
           <thead>
@@ -1154,7 +1083,7 @@ const WorkflowContent = ({ categoryName, tasks, onSave, onDelete, onAdd, isEditM
    RecordsContent：風琴夾 Tabs 工作紀錄與無表單純淨介面
 =================================================================================== */
 
-const RecordsContent = ({ isEditMode, setIsEditMode, recordTabs, setRecordTabs, activeTabId, setActiveTabId, staffMembers, recordCounts, setRecordCounts }) => {
+const RecordsContent = ({ isEditMode, recordTabs, setRecordTabs, activeTabId, setActiveTabId, staffMembers, recordCounts, setRecordCounts }) => {
   const [isAddingTab, setIsAddingTab] = useState(false);
   const [newTabName, setNewTabName] = useState('');
   const [deletingTabId, setDeletingTabId] = useState(null); 
@@ -1187,6 +1116,7 @@ const RecordsContent = ({ isEditMode, setIsEditMode, recordTabs, setRecordTabs, 
     <div className="animate-fade-in flex flex-col h-full w-full max-w-5xl mx-auto">
       <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-6 shrink-0">工作紀錄</h2>
 
+      {/* 風琴夾 / Tabs 分類標籤區 */}
       <div className="flex items-center gap-2 mb-4 border-b border-gray-200 overflow-x-auto no-scrollbar shrink-0 pt-2 px-2">
         {recordTabs.map(tab => (
           <div key={tab.id} onClick={() => setActiveTabId(tab.id)} className={`group relative flex items-center gap-2 px-6 py-3.5 rounded-t-2xl cursor-pointer font-bold transition-all ${activeTabId === tab.id ? 'bg-white text-black shadow-[0_-4px_15px_rgba(0,0,0,0.03)] z-10' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}>
@@ -1216,6 +1146,7 @@ const RecordsContent = ({ isEditMode, setIsEditMode, recordTabs, setRecordTabs, 
         )}
       </div>
 
+      {/* 工作人員計數卡片列表區塊 */}
       <div className="flex flex-col gap-4 overflow-y-auto pb-10 pt-2 px-1 relative">
         {staffMembers.map(staff => {
           const currentCount = recordCounts[activeTabId]?.[staff.id] || 0;
@@ -1350,17 +1281,17 @@ const StationContent = ({ areaName, categoryId, stations, stationAssignments, se
         })}
         {cards.length === 0 && (
           <div className="col-span-full flex flex-col items-center justify-center text-gray-400 gap-4 py-20">
-         <LayoutGrid className="w-16 h-16 opacity-20" />
-         <p className="font-bold">此區域目前沒有崗位卡片，請點擊左下角星號 Logo 進入全域設定新增。</p>
+             <LayoutGrid className="w-16 h-16 opacity-20" />
+             <p className="font-bold">此區域目前沒有崗位卡片，請點擊左下角星號 Logo 進入全域設定新增。</p>
+          </div>
+        )}
       </div>
-    )}
-  </div>
-</div>
-);
+    </div>
+  );
 };
 
 /* ===================================================================================
-   Home Content (首頁 - 公告系統)
+   🆕 Home Content (首頁 - 公告系統)
 =================================================================================== */
 
 const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel }) => {
