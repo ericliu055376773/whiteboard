@@ -180,6 +180,11 @@ export default function App() {
     { id: 'a2', date: '2024-05-18', title: '端午節排班注意事項', content: '端午連假排班已開放填寫，請於本週五前完成畫假。' }
   ]);
 
+  // 13. 物料消耗下拉選單品項設定
+  const [consumptionItemOptions, setConsumptionItemOptions, isL13] = useFirestoreState('workOS_v1', 'consumptionItemOptions', [
+    '五花肉', '梅花豬肉片', '特選板腱牛', '高麗菜', '金針菇', '綜合火鍋料', '白飯', '雞蛋'
+  ]);
+
   // 新增分類 UI 狀態變數
   const [isAddingWorkflowCat, setIsAddingWorkflowCat] = useState(false);
   const [newWorkflowCatName, setNewWorkflowCatName] = useState('');
@@ -188,7 +193,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState(recordTabs[0]?.id || 't1');
 
   // 確認所有雲端資料是否載入完畢
-  const isAppReady = isL1 && isL2 && isL3 && isL4 && isL5 && isL6 && isL7 && isL8 && isL9 && isL10 && isL11 && isL12;
+  const isAppReady = isL1 && isL2 && isL3 && isL4 && isL5 && isL6 && isL7 && isL8 && isL9 && isL10 && isL11 && isL12 && isL13;
 
   /* =========================================================
      拖曳排序 (Drag & Drop) 系統
@@ -509,6 +514,8 @@ export default function App() {
           setConsumptionRecords={setConsumptionRecords}
           staffMembers={staffMembers}
           menuLabel={menuLabels.integrations}
+          itemOptions={consumptionItemOptions}
+          setItemOptions={setConsumptionItemOptions}
         />
       );
     }
@@ -779,7 +786,7 @@ const ContextualMenuItem = ({ item, isActive, onClick, onSave, onDelete, isEditM
    🆕 Consumption Content (物料消耗紀錄系統)
 =================================================================================== */
 
-const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionRecords, staffMembers, menuLabel }) => {
+const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionRecords, staffMembers, menuLabel, itemOptions, setItemOptions }) => {
   const [activeTab, setActiveTab] = useState('meat');
   const tabs = [
     { id: 'meat', name: '肉品消耗' },
@@ -799,6 +806,18 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
 
   const [deletingId, setDeletingId] = useState(null);
 
+  // 品項設定的本地草稿狀態
+  const [draftOptions, setDraftOptions] = useState(itemOptions);
+  const [newOptionInput, setNewOptionInput] = useState('');
+  const [isOptionsModified, setIsOptionsModified] = useState(false);
+
+  // 確保在未修改設定時，畫面能同步來自雲端的品項資料
+  useEffect(() => {
+    if (!isOptionsModified) {
+      setDraftOptions(itemOptions);
+    }
+  }, [itemOptions, isOptionsModified]);
+
   const handleAdd = () => {
     if (!formData.staffId || !formData.amount || !formData.date || !formData.itemName) return;
     const newRecord = {
@@ -814,6 +833,30 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
   const handleDelete = (id) => {
     setConsumptionRecords(consumptionRecords.filter(r => r.id !== id));
     setDeletingId(null);
+  };
+
+  // 下拉選單品項設定功能
+  const handleAddOption = () => {
+    if (!newOptionInput.trim() || draftOptions.includes(newOptionInput.trim())) return;
+    setDraftOptions([...draftOptions, newOptionInput.trim()]);
+    setNewOptionInput('');
+    setIsOptionsModified(true);
+  };
+
+  const handleRemoveOption = (optToRemove) => {
+    setDraftOptions(draftOptions.filter(opt => opt !== optToRemove));
+    setIsOptionsModified(true);
+  };
+
+  const handleSaveOptions = () => {
+    setItemOptions(draftOptions);
+    setIsOptionsModified(false);
+  };
+
+  const handleCancelOptions = () => {
+    setDraftOptions(itemOptions);
+    setIsOptionsModified(false);
+    setNewOptionInput('');
   };
 
   // 計算數據: 本日、本週、本月、本年
@@ -914,7 +957,13 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
           <div className="w-full md:col-span-2 flex gap-3">
              <div className="flex-1">
                <label className="block text-xs font-bold text-gray-700 mb-2">消耗品項 / 備註</label>
-               <input type="text" placeholder="例如：五花肉..." value={formData.itemName} onChange={(e) => setFormData({...formData, itemName: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-black text-gray-900"/>
+               {/* 更改為下拉選單 */}
+               <select value={formData.itemName} onChange={(e) => setFormData({...formData, itemName: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-black text-gray-900 cursor-pointer appearance-none">
+                 <option value="" disabled>選擇品項...</option>
+                 {itemOptions.map((opt, idx) => (
+                   <option key={idx} value={opt}>{opt}</option>
+                 ))}
+               </select>
              </div>
              <div className="w-24">
                <label className="block text-xs font-bold text-gray-700 mb-2">數量</label>
@@ -927,6 +976,41 @@ const ConsumptionContent = ({ isEditMode, consumptionRecords, setConsumptionReco
 
         </div>
       </div>
+
+      {/* 編輯模式專屬：品項下拉選單設定區塊 */}
+      {isEditMode && (
+        <div className="bg-white rounded-[1.5rem] p-5 shadow-sm border border-orange-200 mb-6 shrink-0 relative overflow-hidden animate-fade-in">
+          <div className="absolute top-0 left-0 w-1 h-full bg-orange-400"></div>
+          <div className="flex justify-between items-center mb-4 ml-2">
+             <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+               <Settings2 className="w-4 h-4 text-orange-500" /> 品項下拉選單設定 (編輯模式)
+             </h3>
+             {isOptionsModified && (
+               <div className="flex gap-2 animate-fade-in">
+                 <button onClick={handleCancelOptions} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 font-bold transition-colors">取消變更</button>
+                 <button onClick={handleSaveOptions} className="text-xs px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-bold flex items-center gap-1 shadow-sm transition-colors"><CheckCircle2 className="w-3.5 h-3.5"/>儲存設定</button>
+               </div>
+             )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 ml-2">
+            <div className="w-full sm:w-1/3 flex gap-2">
+              <input type="text" placeholder="輸入新品項名稱..." value={newOptionInput} onChange={e => setNewOptionInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddOption()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-orange-400 transition-colors" />
+              <button onClick={handleAddOption} className="bg-gray-800 text-white px-3 rounded-xl hover:bg-black transition-colors shadow-sm"><Plus className="w-4 h-4" /></button>
+            </div>
+
+            <div className="w-full sm:w-2/3 flex flex-wrap gap-2 items-center p-3 bg-gray-50 rounded-xl border border-gray-100 min-h-[44px]">
+              {draftOptions.length === 0 && <span className="text-xs text-gray-400 font-bold">目前沒有任何品項，請新增。</span>}
+              {draftOptions.map((opt, idx) => (
+                <span key={idx} className="bg-white border border-gray-200 text-gray-700 text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm animate-fade-in group">
+                  {opt}
+                  <button onClick={() => handleRemoveOption(opt)} className="text-gray-300 hover:text-red-500 transition-colors ml-1"><X className="w-3 h-3"/></button>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 歷史紀錄表 */}
       <div className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-x-auto w-full flex-1">
