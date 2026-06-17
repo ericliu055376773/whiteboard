@@ -499,10 +499,41 @@ const WorkflowContent = ({ categoryName, tasks, onSave, onDelete, onAdd, isEditM
 };
 
 // RecordsContent：風琴夾 Tabs 工作紀錄與無表單純淨介面
-const RecordsContent = ({ isEditMode, recordTabs, setRecordTabs, activeTabId, setActiveTabId, staffMembers, recordCounts, setRecordCounts }) => {
+const RecordsContent = ({ isEditMode, recordTabs, setRecordTabs, activeTabId, setActiveTabId, staffMembers, recordCounts, setRecordCounts, managerPassword }) => {
   const [isAddingTab, setIsAddingTab] = useState(false);
   const [newTabName, setNewTabName] = useState('');
-  const [deletingTabId, setDeletingTabId] = useState(null); 
+  const [deletingTabId, setDeletingTabId] = useState(null);
+
+  // 店長密碼驗證彈窗狀態
+  const [pendingAction, setPendingAction] = useState(null); // { staffId, change }
+  const [showManagerModal, setShowManagerModal] = useState(false);
+  const [managerInput, setManagerInput] = useState('');
+  const [managerError, setManagerError] = useState(false);
+
+  const requestCountChange = (staffId, change) => {
+    setPendingAction({ staffId, change });
+    setManagerInput('');
+    setManagerError(false);
+    setShowManagerModal(true);
+  };
+
+  const confirmManagerPassword = () => {
+    if (managerInput === managerPassword) {
+      if (pendingAction) {
+        setRecordCounts(prev => {
+          const currentCount = prev[activeTabId]?.[pendingAction.staffId] || 0;
+          const newCount = Math.max(0, currentCount + pendingAction.change);
+          return { ...prev, [activeTabId]: { ...(prev[activeTabId] || {}), [pendingAction.staffId]: newCount } };
+        });
+      }
+      setShowManagerModal(false);
+      setPendingAction(null);
+      setManagerInput('');
+      setManagerError(false);
+    } else {
+      setManagerError(true);
+    }
+  };
 
   const updateCount = (staffId, change) => {
     setRecordCounts(prev => {
@@ -531,6 +562,32 @@ const RecordsContent = ({ isEditMode, recordTabs, setRecordTabs, activeTabId, se
   return (
     <div className="animate-fade-in flex flex-col h-full w-full max-w-5xl mx-auto">
       <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-6 shrink-0">工作紀錄</h2>
+
+      {/* 店長密碼驗證彈窗 */}
+      {showManagerModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-[2rem] p-6 md:p-8 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-center w-12 h-12 bg-gray-100 text-black rounded-full mb-4 mx-auto"><Key className="w-6 h-6" /></div>
+            <h3 className="text-xl font-bold text-center text-gray-900 mb-2">店長驗證</h3>
+            <p className="text-sm text-gray-500 text-center mb-6 font-bold">請輸入店長密碼以調整完成次數</p>
+            <input
+              type="password"
+              value={managerInput}
+              onChange={(e) => { setManagerInput(e.target.value); setManagerError(false); }}
+              onKeyDown={(e) => e.key === 'Enter' && confirmManagerPassword()}
+              className={`w-full px-4 py-3 rounded-xl border ${managerError ? 'border-red-500 bg-red-50 text-red-600' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all text-center tracking-[0.5em] font-mono text-lg font-bold`}
+              placeholder="••••"
+              maxLength={6}
+              autoFocus
+            />
+            {managerError ? <p className="text-red-500 text-xs text-center mt-2 font-bold">密碼錯誤，請重新輸入</p> : <p className="text-transparent text-xs text-center mt-2 select-none font-bold">.</p>}
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => { setShowManagerModal(false); setPendingAction(null); setManagerInput(''); setManagerError(false); }} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors">取消</button>
+              <button onClick={confirmManagerPassword} className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-colors">確認</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 風琴夾 / Tabs 分類標籤區 */}
       <div className="flex items-center gap-2 mb-4 border-b border-gray-200 overflow-x-auto no-scrollbar shrink-0 pt-2 px-2">
@@ -580,9 +637,9 @@ const RecordsContent = ({ isEditMode, recordTabs, setRecordTabs, activeTabId, se
                      <span className="text-2xl font-black text-black leading-none">{currentCount}</span>
                   </div>
                   <div className="flex items-center bg-white rounded-xl p-1.5 border border-gray-100 shadow-sm">
-                     <button onClick={() => updateCount(staff.id, -1)} className="w-9 h-9 flex items-center justify-center bg-gray-50 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-black font-black text-xl leading-none transition-colors active:scale-95"><Minus className="w-4 h-4"/></button>
+                     <button onClick={() => requestCountChange(staff.id, -1)} className="w-9 h-9 flex items-center justify-center bg-gray-50 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-black font-black text-xl leading-none transition-colors active:scale-95"><Minus className="w-4 h-4"/></button>
                      <span className="font-black text-black w-10 text-center text-lg">{currentCount}</span>
-                     <button onClick={() => updateCount(staff.id, 1)} className="w-9 h-9 flex items-center justify-center bg-gray-100 rounded-lg text-black hover:bg-gray-200 hover:text-black font-black text-xl leading-none transition-colors active:scale-95"><Plus className="w-4 h-4"/></button>
+                     <button onClick={() => requestCountChange(staff.id, 1)} className="w-9 h-9 flex items-center justify-center bg-gray-100 rounded-lg text-black hover:bg-gray-200 hover:text-black font-black text-xl leading-none transition-colors active:scale-95"><Plus className="w-4 h-4"/></button>
                   </div>
                </div>
             </div>
@@ -694,6 +751,169 @@ const StationContent = ({ areaName, categoryId, stations, stationAssignments, se
           <div className="col-span-full flex flex-col items-center justify-center text-gray-400 gap-4 py-20">
              <LayoutGrid className="w-16 h-16 opacity-20" />
              <p className="font-bold">此區域目前沒有崗位卡片，請點擊左下角星號 Logo 進入全域設定新增。</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// 🆕 RulesContent (公司規章查閱)
+const RulesContent = ({ isEditMode, rules, setRules, menuLabel }) => {
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ title: '', content: '', scope: 'all' });
+
+  const filters = [
+    { id: 'all', label: '全部' },
+    { id: 'indoor', label: '內場' },
+    { id: 'outdoor', label: '外場' },
+  ];
+
+  const scopeLabels = { all: '全體', indoor: '內場', outdoor: '外場' };
+  const scopeColors = {
+    all: 'bg-green-100 text-green-700',
+    indoor: 'bg-orange-100 text-orange-700',
+    outdoor: 'bg-blue-100 text-blue-700',
+  };
+
+  const filtered = rules.filter(r => {
+    const matchScope = activeFilter === 'all' || r.scope === activeFilter || r.scope === 'all';
+    const matchSearch = searchQuery.trim() === '' || r.title.includes(searchQuery) || r.content.includes(searchQuery);
+    return matchScope && matchSearch;
+  });
+
+  const handleSave = () => {
+    if (!formData.title.trim() || !formData.content.trim()) return;
+    if (editingId) {
+      setRules(rules.map(r => r.id === editingId ? { ...r, ...formData, date: new Date().toISOString().split('T')[0] } : r));
+      setEditingId(null);
+    } else {
+      setRules([{ id: 'rule' + Date.now(), date: new Date().toISOString().split('T')[0], ...formData }, ...rules]);
+      setIsAdding(false);
+    }
+    setFormData({ title: '', content: '', scope: 'all' });
+  };
+
+  const openEdit = (rule) => {
+    setEditingId(rule.id);
+    setFormData({ title: rule.title, content: rule.content, scope: rule.scope });
+    setIsAdding(false);
+    setExpandedId(null);
+  };
+
+  return (
+    <div className="animate-fade-in flex flex-col h-full w-full max-w-5xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 shrink-0">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-900">{menuLabel}</h2>
+        {isEditMode && !isAdding && !editingId && (
+          <button onClick={() => { setIsAdding(true); setFormData({ title: '', content: '', scope: 'all' }); }} className="bg-black text-white px-5 py-2.5 rounded-xl font-bold hover:bg-gray-800 transition-all shadow-md text-sm flex items-center justify-center gap-2 w-full sm:w-auto active:scale-95">
+            <PlusSquare className="w-4 h-4" /> 新增規章
+          </button>
+        )}
+      </div>
+
+      {/* 搜尋欄 */}
+      {!isAdding && !editingId && (
+        <div className="relative mb-4 shrink-0">
+          <input
+            type="text"
+            placeholder="搜尋關鍵字，例如：請假、制服、安全..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-3.5 pl-12 text-sm font-bold outline-none focus:border-gray-400 focus:ring-2 focus:ring-gray-100 transition-all shadow-sm"
+          />
+          <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black transition-colors"><X className="w-4 h-4" /></button>
+          )}
+        </div>
+      )}
+
+      {/* 分類 Tab */}
+      {!isAdding && !editingId && (
+        <div className="flex items-center gap-2 mb-5 shrink-0">
+          {filters.map(f => (
+            <button key={f.id} onClick={() => setActiveFilter(f.id)} className={`px-5 py-2 rounded-full text-sm font-bold transition-all ${activeFilter === f.id ? 'bg-black text-white shadow-md' : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-400 hover:text-black'}`}>{f.label}</button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto pb-10 flex flex-col gap-4">
+        {/* 新增 / 編輯表單 */}
+        {(isAdding || editingId) && isEditMode && (
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-gray-200 animate-fade-in shrink-0">
+            <h3 className="font-bold text-gray-800 mb-4 text-lg">{editingId ? '編輯規章' : '新增規章'}</h3>
+            <input type="text" placeholder="輸入規章標題..." value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:border-black mb-4 transition-colors" />
+            <textarea placeholder="輸入規章內容詳細說明..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:border-black min-h-[160px] resize-none mb-4 transition-colors leading-relaxed" />
+            <div className="mb-6">
+              <label className="block text-xs font-bold text-gray-500 mb-2">適用對象</label>
+              <div className="flex gap-3">
+                {[{ id: 'all', label: '全體' }, { id: 'indoor', label: '內場' }, { id: 'outdoor', label: '外場' }].map(s => (
+                  <button key={s.id} onClick={() => setFormData({...formData, scope: s.id})} className={`px-5 py-2 rounded-full text-sm font-bold border transition-all ${formData.scope === s.id ? 'bg-black text-white border-black shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'}`}>{s.label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setIsAdding(false); setEditingId(null); setFormData({ title: '', content: '', scope: 'all' }); }} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors text-sm shadow-sm">取消</button>
+              <button onClick={handleSave} className="px-6 py-2.5 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-md text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> {editingId ? '儲存修改' : '發布規章'}</button>
+            </div>
+          </div>
+        )}
+
+        {/* 規章列表 */}
+        {!isAdding && !editingId && filtered.map(rule => (
+          <div key={rule.id} className="bg-white rounded-[1.5rem] shadow-sm border border-gray-100 overflow-hidden relative group transition-all duration-300 animate-fade-in">
+            <div
+              className={`p-5 flex justify-between items-center cursor-pointer transition-colors ${expandedId === rule.id ? 'bg-gray-50' : 'hover:bg-gray-50'}`}
+              onClick={() => setExpandedId(expandedId === rule.id ? null : rule.id)}
+            >
+              <div className="flex items-center gap-3 md:gap-5 flex-1 pr-4">
+                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 text-gray-500" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-gray-800 font-bold text-[15px] md:text-lg truncate">{rule.title}</h4>
+                  <p className="text-gray-400 text-xs font-bold mt-0.5">{rule.date}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full hidden sm:block ${scopeColors[rule.scope]}`}>{scopeLabels[rule.scope]}</span>
+                {isEditMode && (
+                  <div className="flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(rule); }} className="p-1.5 bg-gray-100 text-gray-500 hover:text-black rounded-lg transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setRules(rules.filter(r => r.id !== rule.id)); }} className="p-1.5 bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${expandedId === rule.id ? 'bg-black text-white' : 'bg-gray-100 text-gray-500'}`}>
+                  <span className="font-bold text-lg leading-none mt-[-2px]">{expandedId === rule.id ? '-' : '+'}</span>
+                </div>
+              </div>
+            </div>
+            {expandedId === rule.id && (
+              <div className="px-5 md:px-[4.5rem] pb-6 pt-2 bg-gray-50 animate-fade-in border-t border-gray-100/50">
+                <p className="text-gray-600 font-bold leading-relaxed whitespace-pre-wrap text-sm md:text-[15px]">{rule.content}</p>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* 空狀態 */}
+        {!isAdding && !editingId && filtered.length === 0 && (
+          <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-gray-100 text-center flex flex-col items-center justify-center gap-4 h-[300px] animate-fade-in">
+            <FileText className="w-16 h-16 opacity-20" />
+            <p className="text-gray-500 font-bold">{searchQuery ? `找不到包含「${searchQuery}」的規章` : (isEditMode ? '目前沒有規章，點擊右上角新增。' : '目前尚無規章資料')}</p>
+          </div>
+        )}
+
+        {/* 前台預覽提示 */}
+        {!isEditMode && (
+          <div className="flex items-center gap-3 px-5 py-3.5 bg-gray-50 rounded-2xl border border-gray-100 shrink-0">
+            <Star className="w-4 h-4 text-gray-400 shrink-0" />
+            <span className="text-xs font-bold text-gray-400">員工可查閱所有規章內容，新增與修改需由管理員解鎖後操作</span>
           </div>
         )}
       </div>
@@ -839,6 +1059,58 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
   );
 }
 
+// 🆕 店長密碼設定元件
+const ManagerPasswordSetting = ({ managerPassword, setManagerPassword }) => {
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSave = () => {
+    if (!draft.trim()) { setError('密碼不可為空'); return; }
+    if (draft !== confirm) { setError('兩次輸入不一致，請重新確認'); return; }
+    setManagerPassword(draft);
+    setEditMode(false);
+    setDraft('');
+    setConfirm('');
+    setError('');
+  };
+
+  return (
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-9 h-9 bg-gray-900 rounded-xl flex items-center justify-center"><Star className="w-4 h-4 text-white" /></div>
+        <div>
+          <p className="font-bold text-gray-900 text-sm">店長密碼（工作紀錄 +/− 用）</p>
+          <p className="text-xs text-gray-400 font-bold">員工按 +/− 時需輸入此密碼才能調整完成次數</p>
+        </div>
+      </div>
+      {!editMode ? (
+        <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3 border border-gray-200">
+          <span className="font-mono text-lg tracking-[0.5em] text-gray-400">{'•'.repeat(managerPassword?.length || 4)}</span>
+          <button onClick={() => { setEditMode(true); setDraft(''); setConfirm(''); setError(''); }} className="text-sm font-bold text-gray-600 hover:text-black transition-colors bg-white px-4 py-1.5 rounded-lg border border-gray-200 shadow-sm hover:border-gray-400">修改密碼</button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5">新密碼</label>
+            <input type="password" value={draft} onChange={e => { setDraft(e.target.value); setError(''); }} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-black transition-colors tracking-widest font-mono" placeholder="輸入新密碼" maxLength={8} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5">確認新密碼</label>
+            <input type="password" value={confirm} onChange={e => { setConfirm(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleSave()} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-black transition-colors tracking-widest font-mono" placeholder="再次輸入確認" maxLength={8} />
+          </div>
+          {error && <p className="text-red-500 text-xs font-bold">{error}</p>}
+          <div className="flex gap-3 justify-end mt-1">
+            <button onClick={() => { setEditMode(false); setError(''); }} className="px-5 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors text-sm">取消</button>
+            <button onClick={handleSave} className="px-5 py-2 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-md text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> 儲存密碼</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ===================================================================================
    主應用程式 (App) - 必須在所有子組件之後宣告，避免編譯期無法參照
 =================================================================================== */
@@ -886,7 +1158,7 @@ export default function App() {
   ========================================================= */
   
   // 1. 主選單排序狀態
-  const [mainMenuOrder, setMainMenuOrder, isL1] = useFirestoreState('workOS_v1', 'mainMenuOrder', ['home', 'workflow', 'integrations', 'records', 'station']);
+  const [mainMenuOrder, setMainMenuOrder, isL1] = useFirestoreState('workOS_v1', 'mainMenuOrder', ['home', 'workflow', 'integrations', 'records', 'station', 'rules']);
   
   // 2. 工作流程分類
   const [workflowCategories, setWorkflowCategories, isL2] = useFirestoreState('workOS_v1', 'workflowCategories', [
@@ -896,7 +1168,7 @@ export default function App() {
 
   // 3. 介面文字設定
   const [menuLabels, setMenuLabels, isL3] = useFirestoreState('workOS_v1', 'menuLabels', {
-    home: '首頁', workflow: '工作流程', integrations: '物料消耗', records: '工作紀錄', station: '崗位區域安排'
+    home: '首頁', workflow: '工作流程', integrations: '物料消耗', records: '工作紀錄', station: '崗位區域安排', rules: '公司規章'
   });
 
   // 4. 崗位區域分類
@@ -954,6 +1226,16 @@ export default function App() {
     '五花肉', '梅花豬肉片', '特選板腱牛', '高麗菜', '金針菇', '綜合火鍋料', '白飯', '雞蛋'
   ]);
 
+  // 14. 公司規章資料
+  const [rules, setRules, isL14] = useFirestoreState('workOS_v1', 'rules', [
+    { id: 'rule-1', date: new Date().toISOString().split('T')[0], title: '員工請假與排休規定', content: '員工請假須提前三天通知主管，並填寫請假單。連假排休請於一週前提出申請。', scope: 'all' },
+    { id: 'rule-2', date: new Date().toISOString().split('T')[0], title: '廚房安全操作規範', content: '進入廚房須穿戴整齊，包含廚師帽、防燙手套。刀具使用完畢須立即歸位。禁止在廚房區域飲食。', scope: 'indoor' },
+    { id: 'rule-3', date: new Date().toISOString().split('T')[0], title: '外場儀容服裝規定', content: '外場人員上班須穿著公司制服，保持整潔。頭髮需整齊梳理，不可披頭散髮。禁止配戴誇張飾品。', scope: 'outdoor' },
+  ]);
+
+  // 15. 店長密碼（工作紀錄 +/− 用）
+  const [managerPassword, setManagerPassword, isL15] = useFirestoreState('workOS_v1', 'managerPassword', '1234');
+
   // 新增分類 UI 狀態變數
   const [isAddingWorkflowCat, setIsAddingWorkflowCat] = useState(false);
   const [newWorkflowCatName, setNewWorkflowCatName] = useState('');
@@ -962,7 +1244,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState(recordTabs[0]?.id || 't1');
 
   // 確認所有雲端資料是否載入完畢
-  const isAppReady = isL1 && isL2 && isL3 && isL4 && isL5 && isL6 && isL7 && isL8 && isL9 && isL10 && isL11 && isL12 && isL13;
+  const isAppReady = isL1 && isL2 && isL3 && isL4 && isL5 && isL6 && isL7 && isL8 && isL9 && isL10 && isL11 && isL12 && isL13 && isL14 && isL15;
 
   /* =========================================================
      拖曳排序 (Drag & Drop) 系統
@@ -1048,6 +1330,7 @@ export default function App() {
     if (menuId === 'integrations') Icon = PlusSquare;
     if (menuId === 'records') Icon = ClipboardList;
     if (menuId === 'station') Icon = Map;
+    if (menuId === 'rules') Icon = FileText;
 
     return { isActive, Icon, label };
   };
@@ -1088,7 +1371,8 @@ export default function App() {
     activeMenu.startsWith('workflow') ? 'workflow' : 
     activeMenu.startsWith('station') ? 'station' : 
     activeMenu === 'integrations' ? 'integrations' : 
-    activeMenu === 'records' ? 'records' : 'home';
+    activeMenu === 'records' ? 'records' :
+    activeMenu === 'rules' ? 'rules' : 'home';
 
   const hasSubMenu = currentMainCategory === 'workflow' || currentMainCategory === 'station';
 
@@ -1114,6 +1398,7 @@ export default function App() {
             <div className="flex flex-col gap-2">
               <button onClick={() => setSettingTab('staff')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${settingTab === 'staff' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:bg-gray-100 hover:text-black'}`}><Users className="w-4 h-4"/> 人員名單管理</button>
               <button onClick={() => setSettingTab('stations')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${settingTab === 'stations' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:bg-gray-100 hover:text-black'}`}><LayoutTemplate className="w-4 h-4"/> 崗位卡片管理</button>
+              <button onClick={() => setSettingTab('password')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${settingTab === 'password' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:bg-gray-100 hover:text-black'}`}><Key className="w-4 h-4"/> 權限密碼管理</button>
               <button onClick={() => setSettingTab('text')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${settingTab === 'text' ? 'bg-black text-white shadow-md' : 'text-gray-500 hover:bg-gray-100 hover:text-black'}`}><Type className="w-4 h-4"/> 介面文字設定</button>
             </div>
 
@@ -1199,6 +1484,30 @@ export default function App() {
               </div>
             )}
 
+            {/* 權限密碼管理 Tab */}
+            {settingTab === 'password' && (
+              <div className="animate-fade-in max-w-2xl pb-10">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">權限密碼管理</h3>
+                <p className="text-gray-500 text-sm mb-6 font-bold">管理系統中各層級的密碼設定，兩組密碼各自獨立運作。</p>
+
+                <div className="flex flex-col gap-5">
+                  {/* 管理員密碼說明卡 */}
+                  <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center"><Key className="w-4 h-4 text-gray-600" /></div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">管理員密碼（後台編輯用）</p>
+                        <p className="text-xs text-gray-400 font-bold">目前固定為 0204，如需修改請聯繫開發者</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 店長密碼設定卡 */}
+                  <ManagerPasswordSetting managerPassword={managerPassword} setManagerPassword={setManagerPassword} />
+                </div>
+              </div>
+            )}
+
             {/* 介面文字設定 Tab */}
             {settingTab === 'text' && (
               <div className="animate-fade-in max-w-2xl pb-10">
@@ -1207,7 +1516,7 @@ export default function App() {
                 
                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-5">
                   {Object.entries(menuLabels).map(([key, value]) => {
-                    const keyNames = { home: '首頁按鈕', workflow: '工作流程 (主分類)', integrations: '整合功能 (現為消耗紀錄)', records: '工作紀錄', station: '崗位安排 (主分類)' };
+                    const keyNames = { home: '首頁按鈕', workflow: '工作流程 (主分類)', integrations: '整合功能 (現為消耗紀錄)', records: '工作紀錄', station: '崗位安排 (主分類)', rules: '公司規章' };
                     return (
                       <div key={key}>
                         <label className="block text-xs font-bold text-gray-500 mb-1.5">{keyNames[key] || key}</label>
@@ -1306,6 +1615,16 @@ export default function App() {
             activeTabId={activeTabId} setActiveTabId={setActiveTabId}
             staffMembers={staffMembers}
             recordCounts={recordCounts} setRecordCounts={setRecordCounts}
+            managerPassword={managerPassword}
+          />
+        );
+      case 'rules':
+        return (
+          <RulesContent
+            isEditMode={isEditMode}
+            rules={rules}
+            setRules={setRules}
+            menuLabel={menuLabels.rules || '公司規章'}
           />
         );
       default:
