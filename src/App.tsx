@@ -926,7 +926,28 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
   const [expandedId, setExpandedId] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({ title: '', content: '' });
+  const [formData, setFormData] = useState({ title: '', content: '', image: '' });
+  const [imagePreview, setImagePreview] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const handleImageFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target.result as string;
+      setImagePreview(base64);
+      setFormData(prev => ({ ...prev, image: base64 }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    handleImageFile(file);
+  };
 
   const handleSave = () => {
     if (!formData.title.trim() || !formData.content.trim()) return;
@@ -934,7 +955,8 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
       id: editingId || 'a' + Date.now(),
       date: new Date().toISOString().split('T')[0],
       title: formData.title,
-      content: formData.content
+      content: formData.content,
+      image: formData.image || '',
     };
 
     if (editingId) {
@@ -944,6 +966,7 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
       setAnnouncements([newAnn, ...announcements]);
       setIsAdding(false);
     }
+    setImagePreview('');
   };
 
   const handleDelete = (id) => {
@@ -952,14 +975,16 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
 
   const openEdit = (ann) => {
     setEditingId(ann.id);
-    setFormData({ title: ann.title, content: ann.content });
+    setFormData({ title: ann.title, content: ann.content, image: ann.image || '' });
+    setImagePreview(ann.image || '');
     setIsAdding(false);
   };
 
   const openAdd = () => {
     setIsAdding(true);
     setEditingId(null);
-    setFormData({ title: '', content: '' });
+    setFormData({ title: '', content: '', image: '' });
+    setImagePreview('');
   };
 
   const latestAnn = announcements[0];
@@ -982,9 +1007,39 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
            <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-gray-200 animate-fade-in">
              <h3 className="font-bold text-gray-800 mb-4 text-lg">{editingId ? '編輯公告' : '新增公告'}</h3>
              <input type="text" placeholder="輸入公告標題..." value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:border-black mb-4 transition-colors" />
-             <textarea placeholder="輸入詳細公告內容..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:border-black min-h-[160px] resize-none mb-6 transition-colors leading-relaxed" />
+             <textarea placeholder="輸入詳細公告內容..." value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:border-black min-h-[120px] resize-none mb-4 transition-colors leading-relaxed" />
+             
+             {/* 圖片上傳區 */}
+             <div className="mb-6">
+               <label className="block text-xs font-bold text-gray-500 mb-2">附加圖片（選填）</label>
+               {imagePreview ? (
+                 <div className="relative rounded-2xl overflow-hidden border border-gray-200 group">
+                   <img src={imagePreview} alt="預覽" className="w-full max-h-64 object-cover" />
+                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
+                     <button
+                       onClick={() => { setImagePreview(''); setFormData(prev => ({ ...prev, image: '' })); }}
+                       className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg"
+                     ><Trash2 className="w-4 h-4" /> 移除圖片</button>
+                   </div>
+                 </div>
+               ) : (
+                 <div
+                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                   onDragLeave={() => setIsDragging(false)}
+                   onDrop={handleDrop}
+                   onClick={() => fileInputRef.current?.click()}
+                   className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${isDragging ? 'border-black bg-gray-50 scale-[0.99]' : 'border-gray-200 hover:border-gray-400 hover:bg-gray-50'}`}
+                 >
+                   <BarChart2 className="w-8 h-8 text-gray-300 mx-auto mb-3 rotate-90" />
+                   <p className="text-sm font-bold text-gray-400">點擊或拖曳圖片到此處上傳</p>
+                   <p className="text-xs text-gray-300 mt-1 font-bold">支援 JPG、PNG、GIF、WebP</p>
+                   <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageFile(e.target.files?.[0])} />
+                 </div>
+               )}
+             </div>
+
              <div className="flex justify-end gap-3">
-               <button onClick={() => { setIsAdding(false); setEditingId(null); }} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors text-sm shadow-sm">取消</button>
+               <button onClick={() => { setIsAdding(false); setEditingId(null); setImagePreview(''); }} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold hover:bg-gray-200 transition-colors text-sm shadow-sm">取消</button>
                <button onClick={handleSave} className="px-6 py-2.5 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-md text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> {editingId ? '儲存修改' : '發布公告'}</button>
              </div>
            </div>
@@ -992,18 +1047,22 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
 
         {/* 最新公告 (大卡片) */}
         {!isAdding && !editingId && latestAnn && (
-           <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-gray-100 relative group animate-fade-in">
-             <div className="flex items-center gap-3 mb-5">
-               <span className="bg-red-50 border border-red-100 text-red-600 px-3 py-1 rounded-lg text-xs font-black tracking-wider flex items-center gap-1.5"><Bell className="w-3.5 h-3.5" /> 最新消息</span>
-               <span className="text-gray-400 text-sm font-bold">{latestAnn.date}</span>
+           <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 relative group animate-fade-in overflow-hidden">
+             {latestAnn.image && (
+               <img src={latestAnn.image} alt="公告圖片" className="w-full max-h-72 object-cover" />
+             )}
+             <div className="p-6 md:p-8">
+               <div className="flex items-center gap-3 mb-5">
+                 <span className="bg-red-50 border border-red-100 text-red-600 px-3 py-1 rounded-lg text-xs font-black tracking-wider flex items-center gap-1.5"><Bell className="w-3.5 h-3.5" /> 最新消息</span>
+                 <span className="text-gray-400 text-sm font-bold">{latestAnn.date}</span>
+               </div>
+               <h3 className="text-2xl md:text-3xl font-black text-gray-900 mb-4">{latestAnn.title}</h3>
+               <p className="text-gray-700 font-bold leading-relaxed whitespace-pre-wrap text-[15px]">{latestAnn.content}</p>
              </div>
-             <h3 className="text-2xl md:text-3xl font-black text-gray-900 mb-4">{latestAnn.title}</h3>
-             <p className="text-gray-700 font-bold leading-relaxed whitespace-pre-wrap text-[15px]">{latestAnn.content}</p>
-             
              {isEditMode && (
                <div className="absolute top-6 right-6 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                 <button onClick={() => openEdit(latestAnn)} className="p-2 bg-gray-100 text-gray-500 hover:text-black rounded-xl transition-colors"><Edit2 className="w-4 h-4" /></button>
-                 <button onClick={() => handleDelete(latestAnn.id)} className="p-2 bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-colors"><Trash2 className="w-4 h-4" /></button>
+                 <button onClick={() => openEdit(latestAnn)} className="p-2 bg-white/90 backdrop-blur-sm text-gray-500 hover:text-black rounded-xl transition-colors shadow-sm"><Edit2 className="w-4 h-4" /></button>
+                 <button onClick={() => handleDelete(latestAnn.id)} className="p-2 bg-red-50/90 backdrop-blur-sm text-red-400 hover:text-red-600 hover:bg-red-100 rounded-xl transition-colors shadow-sm"><Trash2 className="w-4 h-4" /></button>
                </div>
              )}
            </div>
@@ -1021,6 +1080,7 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
                      onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)}
                    >
                      <div className="flex items-center gap-3 md:gap-5 flex-1 pr-4">
+                       {ann.image && <img src={ann.image} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 border border-gray-100" />}
                        <span className="text-gray-400 text-sm font-bold shrink-0">{ann.date}</span>
                        <h4 className="text-gray-800 font-bold text-[15px] md:text-lg truncate">{ann.title}</h4>
                      </div>
@@ -1037,8 +1097,9 @@ const HomeContent = ({ announcements, setAnnouncements, isEditMode, menuLabel })
                      </div>
                    </div>
                    {expandedId === ann.id && (
-                     <div className="px-5 md:px-[6.5rem] pb-6 pt-2 bg-gray-50 animate-fade-in border-t border-gray-100/50">
-                       <p className="text-gray-600 font-bold leading-relaxed whitespace-pre-wrap text-sm md:text-[15px]">{ann.content}</p>
+                     <div className="pb-6 pt-2 bg-gray-50 animate-fade-in border-t border-gray-100/50">
+                       {ann.image && <img src={ann.image} alt="公告圖片" className="w-full max-h-56 object-cover mb-4" />}
+                       <p className="text-gray-600 font-bold leading-relaxed whitespace-pre-wrap text-sm md:text-[15px] px-5 md:px-[6.5rem]">{ann.content}</p>
                      </div>
                    )}
                  </div>
