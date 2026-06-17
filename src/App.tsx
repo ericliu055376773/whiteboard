@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Home, Briefcase, ClipboardList, Map, 
@@ -1321,6 +1320,9 @@ export default function App() {
      公用函式與情境側邊欄判定
   ========================================================= */
 
+  // 確保 rules 一定在導航列（相容舊 Firebase 資料）
+  const effectiveMenuOrder = mainMenuOrder.includes('rules') ? mainMenuOrder : [...mainMenuOrder, 'rules'];
+
   const getMenuProps = (menuId) => {
     const isActive = menuId === 'home' || menuId === 'integrations' || menuId === 'records' ? activeMenu === menuId : activeMenu.startsWith(menuId);
     let Icon = Box;
@@ -1696,7 +1698,7 @@ export default function App() {
 
         {/* Mobile Bottom Nav */}
         <div className="lg:hidden absolute bottom-0 left-0 w-full h-[80px] bg-white border-t border-gray-100 flex justify-around items-center px-4 z-30 pb-4 shadow-[0_-4px_25px_rgba(0,0,0,0.05)] rounded-t-3xl">
-          {mainMenuOrder.map(menuId => {
+          {effectiveMenuOrder.map(menuId => {
             const { isActive, Icon } = getMenuProps(menuId);
             return (
               <button key={menuId} onClick={() => handleLeftNavClick(menuId)} className={`relative p-3 rounded-xl transition-all ${isActive ? (menuId === 'station' ? 'bg-black text-white shadow-md' : 'text-black bg-gray-100') : 'text-gray-400 hover:text-black'}`}>
@@ -1709,10 +1711,10 @@ export default function App() {
         {/* 1. Desktop Nav (左側工具列) */}
         <nav className="hidden lg:flex w-[72px] bg-[#f2f2f6] rounded-full flex-col items-center pt-8 pb-6 shadow-sm flex-shrink-0 relative justify-between">
           <div className="flex flex-col gap-2 w-full items-center relative z-10 px-2 mt-4">
-            {mainMenuOrder.map((menuId, index) => {
+            {effectiveMenuOrder.map((menuId, index) => {
               const { isActive, Icon, label } = getMenuProps(menuId);
               return (
-                <DraggableWrapper key={menuId} type="mainMenu" index={index} list={mainMenuOrder} setList={setMainMenuOrder} className="w-full flex justify-center relative">
+                <DraggableWrapper key={menuId} type="mainMenu" index={index} list={effectiveMenuOrder} setList={setMainMenuOrder} className="w-full flex justify-center relative">
                   <button onClick={() => handleLeftNavClick(menuId)} className={getLeftNavBtnClass(isActive)} title={label}>
                     <div className="relative">
                       <Icon className="w-[22px] h-[22px]" strokeWidth={1.5} />
